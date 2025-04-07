@@ -41,7 +41,7 @@ class AgentMatch:
                 else:
                     return 1, agent1_time, agent2_time  # Player 1 wins
             
-            env.make_move(move, current_player)
+            env.make_move(move)
             current_player = 3 - current_player
         
         env.display()  # Show final board state
@@ -79,13 +79,13 @@ class AgentMatch:
 
 def main():
     # Initialize agents
-    minimax_bot = Connect4Bot(max_depth=4)
+    minimax_bot = Connect4Bot(max_depth=6)
     random_bot = RandomAgent()
     
     # Play matches
     match = AgentMatch("Minimax", minimax_bot, "Random", random_bot)
     print("\nPlaying Minimax vs Random...")
-    match.play_matches(5)  # Play 5 games
+    match.play_matches(10)  # Play 5 games
     match.print_results()
 
 if __name__ == "__main__":

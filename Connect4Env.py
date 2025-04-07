@@ -22,20 +22,19 @@ class Connect4Env:
         for r, c in blocked_positions:
             self.board[r, c] = 3
     
-    def make_move(self, col: int, current_player):
-        """Make a move in the specified column. Returns True if move was valid."""
+    def make_move(self, col: int) -> bool:
         if self.game_over:
             return False
-            
+
         # Find the lowest empty cell in the column
         for row in range(self.rows - 1, -1, -1):
             if self.board[row, col] == 0:
-                self.board[row, col] = current_player
+                self.board[row, col] = self.current_player
                 
                 # Check for win
                 if self._check_win(row, col):
                     self.game_over = True
-                    self.winner = current_player
+                    self.winner = self.current_player
                     return True
                 
                 # Check for draw
@@ -44,11 +43,12 @@ class Connect4Env:
                     self.winner = 0  # Draw
                     return True
                 
-                self.current_player = 3 - self.current_player  # Switch players
+                # Switch players
+                self.current_player = 3 - self.current_player
                 return True
-        
+
         return False
-    
+
     def _check_win(self, row: int, col: int) -> bool:
         """Check if the last move resulted in a win."""
         directions = [(1, 0), (0, 1), (1, 1), (1, -1)]  # vertical, horizontal, diagonal down, diagonal up

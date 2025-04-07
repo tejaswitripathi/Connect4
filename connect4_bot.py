@@ -3,7 +3,7 @@ from typing import Tuple, List, Optional
 from Connect4Env import Connect4Env
 
 class Connect4Bot:
-    def __init__(self, max_depth: int = 4):
+    def __init__(self, max_depth: int = 6):
         self.max_depth = max_depth
         
     def get_move(self, env: Connect4Env, current_player: int) -> int:
@@ -22,9 +22,8 @@ class Connect4Bot:
         
         for move in valid_moves:
             # Make a copy of the environment to simulate the move
-            env_copy = Connect4Env(env.rows, env.cols)
-            env_copy.board = env.board.copy()
-            env_copy.make_move(move, current_player)
+            env_copy = env.copy()
+            env_copy.make_move(move)
             
             # Evaluate the move
             score = self._minimax(env_copy, self.max_depth - 1, False, current_player, alpha, beta)
@@ -62,9 +61,8 @@ class Connect4Bot:
         if is_maximizing:
             max_eval = float('-inf')
             for move in valid_moves:
-                env_copy = Connect4Env(env.rows, env.cols)
-                env_copy.board = env.board.copy()
-                env_copy.make_move(move, current_player)
+                env_copy = env.copy()
+                env_copy.make_move(move)
                 
                 eval = self._minimax(env_copy, depth - 1, False, current_player, alpha, beta)
                 max_eval = max(max_eval, eval)
@@ -75,9 +73,8 @@ class Connect4Bot:
         else:
             min_eval = float('inf')
             for move in valid_moves:
-                env_copy = Connect4Env(env.rows, env.cols)
-                env_copy.board = env.board.copy()
-                env_copy.make_move(move, 3 - current_player)
+                env_copy = env.copy()
+                env_copy.make_move(move)
                 
                 eval = self._minimax(env_copy, depth - 1, True, current_player, alpha, beta)
                 min_eval = min(min_eval, eval)
@@ -125,4 +122,4 @@ class Connect4Bot:
                 elif env.board[row, col] == 3 - current_player:
                     score -= (env.rows - row) * 2
                     
-        return score 
+        return score
