@@ -3,18 +3,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset, random_split
 
-from Connect4Env import Connect4Env  
-from connect4_bot import Connect4Bot   
-from connect4_agents import RandomAgent
+from Connect4Env import Connect4Env   # :contentReference[oaicite:0]{index=0}
+from connect4_bot import Connect4Bot  
 
-def encode_board(board, token_hidden_prob=0.4):
+def encode_board(board, token_hidden_prob=0.3):
     """
     Encode a Connect 4 board into a 3-channel tensor:
       - Channel 1: Player 1 tokens (visible if not hidden)
       - Channel 2: Player 2 tokens (visible if not hidden)
       - Channel 3: Hidden mask (1 if the cell is hidden, 0 otherwise)
+      (no clue if this is right)
+      
     """
     channels = np.zeros((3, board.shape[0], board.shape[1]), dtype=np.float32)
     for i in range(board.shape[0]):
@@ -22,7 +22,7 @@ def encode_board(board, token_hidden_prob=0.4):
             cell = board[i, j]
             if cell == 1 or cell == 2:
                 if random.random() < token_hidden_prob:
-                    channels[2, i, j] = 1.0  
+                    channels[2, i, j] = 1.0  # Hide token.
                 else:
                     if cell == 1:
                         channels[0, i, j] = 1.0
@@ -30,43 +30,7 @@ def encode_board(board, token_hidden_prob=0.4):
                         channels[1, i, j] = 1.0
     return channels
 
-def generate_data(num_games=10, token_hidden_prob=0.3):
-    """
-    Simulate Connect 4 games between two agents:
-      - Player 1: minimax agent (agent type 0)
-      - Player 2: random agent (agent type 1)
-    
-    For each move, record:
-      - The encoded board state (3 channels)
-      - The move chosen by the agent
-      - Metadata indicating which agent made the move (0 for minimax, 1 for random)
-    """
-    data = []
-    labels = []
-    meta = []  
-    for game in range(num_games):
-        print(f"Generating data for game {game+1}/{num_games}...")
-        env = Connect4Env()
-        minimax_bot = Connect4Bot(max_depth=6)
-        random_agent = RandomAgent()
-        while not env.game_over:
-            board_state = env.board.copy()
-            encoded = encode_board(board_state, token_hidden_prob)
-            if env.current_player == 1:
-                move = minimax_bot.get_move(env, env.current_player)
-                agent_type = 0  # minimax agent
-            else:
-                move = random_agent.get_move(env, env.current_player)
-                agent_type = 1  # random agent
-            if move == -1:
-                break
-            data.append(encoded)
-            labels.append(move)
-            meta.append(agent_type)
-            env.make_move(move)
-    return np.array(data), np.array(labels), np.array(meta)
-
-# Define the CNN architecture for Connect 4.
+# Create the CNN 
 class Connect4CNN(nn.Module):
     def __init__(self):
         super(Connect4CNN, self).__init__()
@@ -77,128 +41,144 @@ class Connect4CNN(nn.Module):
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
         self.relu = nn.ReLU()
+      
         self.fc1 = nn.Linear(128 * 6 * 7, 128)
-        self.fc2 = nn.Linear(128, 7)  
+        self.fc2 = nn.Linear(128, 7) 
 
     def forward(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        x = self.relu(self.conv3(x))
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.relu(self.bn2(self.conv2(x)))
+        x = self.relu(self.bn3(self.conv3(x)))
         x = x.view(x.size(0), -1)
         x = self.relu(self.fc1(x))
         x = self.fc2(x)
-        return x 
+        return x  
 
-def train(model, optimizer, criterion, train_loader, epochs=100, print_interval=10):
-    model.train()
-    for epoch in range(epochs):
-        running_loss = 0.0  
-        total_loss = 0.0    
-        for i, (inputs, labels, _) in enumerate(train_loader, 1):  
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-            total_loss += loss.item()
-            
-            if i % print_interval == 0:
-                print(f'Epoch [{epoch+1}/{epochs}], Batch [{i}/{len(train_loader)}], '
-                      f'Running Loss: {running_loss/print_interval:.4f}')
-                running_loss = 0.0
+def select_action(policy, state, env, device, token_hidden_prob=0.3):
+    """
+    Given a policy network and the current environment state, select an action.
+    The state is encoded using encode_board, then the network's logits are masked
+    to zero out illegal moves. An action is then sampled from the resulting distribution.
+    
+    """
+
+    valid_moves = env.get_valid_moves()
+    if not valid_moves:
+        return -1, torch.tensor(0.0, device=device)
+    
+    state_encoded = encode_board(state, token_hidden_prob)
+    state_tensor = torch.tensor(state_encoded, dtype=torch.float32).unsqueeze(0).to(device)
+    logits = policy(state_tensor).squeeze(0)  # shape: (7,)
+    
+    # Create a mask: for legal moves set to 0, illegal remain -inf
+    mask = torch.full((7,), float('-inf')).to(device)
+    for m in valid_moves:
+        mask[m] = 0.0
+    masked_logits = logits + mask
+    probs = torch.softmax(masked_logits, dim=0)
+    
+    if torch.isnan(probs).any():
+        return -1, torch.tensor(0.0, device=device)
+    
+    m = torch.distributions.Categorical(probs)
+    action = m.sample()
+    return action.item(), m.log_prob(action)
+
+def train_rl(policy, optimizer, num_games=100, token_hidden_prob=0.3, device=torch.device("cpu")):
+    """
+    Train the policy network using a REINFORCE approach.
+    The RL agent (Player 1) plays against a random opponent (Player 2).
+    At the end of each game, a reward (+1 win, -1 loss, 0 draw) is used to update the policy.
+    (also no idea if this is how you do it)
+    
+    """
+    policy.train()
+    for game in range(num_games):
+        env = Connect4Env()
+        log_probs = []  
+        state = env.board.copy()
         
-        avg_loss = total_loss / len(train_loader)
-        print(f'==> Epoch [{epoch+1}/{epochs}] Average Loss: {avg_loss:.4f}')
+        while not env.game_over:
+            if env.current_player == 1:
+                # Check for legal moves
+                if not env.get_valid_moves():
+                    break
+                action, log_prob = select_action(policy, state, env, device, token_hidden_prob)
+                
+                if action == -1:
+                    break
+                log_probs.append(log_prob)
+            else:
+                valid_moves = env.get_valid_moves()
+                if not valid_moves:
+                    break
+                action = random.choice(valid_moves)
+            env.make_move(action)
+            state = env.board.copy()
+        
+        # Determine reward.
+        if env.winner == 1:
+            reward = 1.0
+        elif env.winner == 2:
+            reward = -1.0
+        else:
+            reward = 0.0
+        
+        game_loss = - sum(log_probs) * reward
+        
+        optimizer.zero_grad()
+        game_loss.backward()
+        optimizer.step()
+        
+        print(f"Game {game+1}/{num_games}, Reward: {reward}, Loss: {game_loss.item():.4f}")
 
-def evaluate_model(model, dataloader, device):
+def evaluate_rl(policy, num_games=20, token_hidden_prob=0.3, device=torch.device("cpu")):
     """
-    Evaluate the model on a given dataloader.
-    Returns overall accuracy and breakdown by agent type.
+    Evaluate the RL agent by playing games against a random opponent.
+    Reports wins, losses, draws, and win rate.
+    
     """
-    model.eval()
-    total_samples = 0
-    correct = 0
-    correct_minimax = 0
-    total_minimax = 0
-    correct_random = 0
-    total_random = 0
-
-    with torch.no_grad():
-        for inputs, labels, meta in dataloader:
-            inputs, labels, meta = inputs.to(device), labels.to(device), meta.to(device)
-            outputs = model(inputs)
-            predictions = outputs.argmax(dim=1)
-            correct += (predictions == labels).sum().item()
-            total_samples += labels.size(0)
+    policy.eval()
+    wins, losses, draws = 0, 0, 0
+    for game in range(num_games):
+        env = Connect4Env()
+        state = env.board.copy()
+        while not env.game_over:
+            if env.current_player == 1:
+                # Check valid moves before selecting action.
+                if not env.get_valid_moves():
+                    break
+                action, _ = select_action(policy, state, env, device, token_hidden_prob)
+                if action == -1:
+                    break
+            else:
+                valid_moves = env.get_valid_moves()
+                if not valid_moves:
+                    break
+                action = random.choice(valid_moves)
+            env.make_move(action)
+            state = env.board.copy()
             
-            # Evaluate accuracy
-            for pred, target, agent in zip(predictions, labels, meta):
-                if agent.item() == 0:
-                    total_minimax += 1
-                    if pred == target:
-                        correct_minimax += 1
-                else:  
-                    total_random += 1
-                    if pred == target:
-                        correct_random += 1
-
-    overall_acc = correct / total_samples if total_samples > 0 else 0
-    minimax_acc = correct_minimax / total_minimax if total_minimax > 0 else 0
-    random_acc = correct_random / total_random if total_random > 0 else 0
-    return overall_acc, minimax_acc, random_acc
+        if env.winner == 1:
+            wins += 1
+        elif env.winner == 2:
+            losses += 1
+        else:
+            draws += 1
+    total = wins + losses + draws
+    print(f"Evaluation over {total} Game: Wins: {wins}, Losses: {losses}, Draws: {draws}, Win Rate: {wins/total*100:.2f}%")
 
 def main():
-    print("Generating training data from minimax vs random self-play...")
-    data, labels, meta = generate_data(num_games=10, token_hidden_prob=0.3)
-    print(f"Data shape: {data.shape}, Labels shape: {labels.shape}, Meta shape: {meta.shape}")
-    
-    inputs_tensor = torch.tensor(data, dtype=torch.float32)
-    labels_tensor = torch.tensor(labels, dtype=torch.long)
-    meta_tensor = torch.tensor(meta, dtype=torch.long)
-    
-    dataset = TensorDataset(inputs_tensor, labels_tensor, meta_tensor)
-    
-    total_samples = len(dataset)
-    train_size = int(0.8 * total_samples)
-    test_size = total_samples - train_size
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-    
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_loader  = DataLoader(test_dataset, batch_size=32, shuffle=False)
-    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Connect4CNN().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.CrossEntropyLoss()
+    policy = Connect4CNN().to(device)
+    optimizer = optim.Adam(policy.parameters(), lr=0.001)
     
-    for epoch in range(10):
-        running_loss = 0.0
-        total_loss = 0.0
-        for i, (inputs, targets, _) in enumerate(train_loader, 1):
-            inputs, targets = inputs.to(device), targets.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-            total_loss += loss.item()
-            
-            if i % 10 == 0:
-                print(f'Epoch [{epoch+1}/10], Batch [{i}/{len(train_loader)}], '
-                      f'Running Loss: {running_loss/10:.4f}')
-                running_loss = 0.0
-        avg_loss = total_loss / len(train_loader)
-        print(f'Epoch [{epoch+1}/10] Average Loss: {avg_loss:.4f}')
+    num_training_games = 100  
+    print("Starting reinforcement learning training...")
+    train_rl(policy, optimizer, num_games=num_training_games, token_hidden_prob=0.3, device=device)
     
-    train_overall, train_minimax, train_random = evaluate_model(model, train_loader, device)
-    test_overall, test_minimax, test_random = evaluate_model(model, test_loader, device)
-    
-    print(f"Training Accuracy: {train_overall*100:.2f}% (Minimax: {train_minimax*100:.2f}%, Random: {train_random*100:.2f}%)")
-    print(f"Testing Accuracy: {test_overall*100:.2f}% (Minimax: {test_minimax*100:.2f}%, Random: {test_random*100:.2f}%)")
+    print("Evaluating trained RL agent...")
+    evaluate_rl(policy, num_games=20, token_hidden_prob=0.3, device=device)
 
 if __name__ == "__main__":
     main()
