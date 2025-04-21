@@ -85,7 +85,7 @@ def main():
     # Play matches
     match = AgentMatch("Minimax", minimax_bot, "Random", random_bot)
     print("\nPlaying Minimax vs Random...")
-    match.play_matches(10)  # Play 5 games
+    match.play_matches(2)  # Play 5 games
     match.print_results()
 
 if __name__ == "__main__":
