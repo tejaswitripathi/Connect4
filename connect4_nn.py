@@ -173,7 +173,7 @@ def main():
     policy = Connect4CNN().to(device)
     optimizer = optim.Adam(policy.parameters(), lr=0.001)
     
-    num_training_games = 100  
+    num_training_games = 1000
     print("Starting reinforcement learning training...")
     train_rl(policy, optimizer, num_games=num_training_games, token_hidden_prob=0.3, device=device)
     
