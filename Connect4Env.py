@@ -15,6 +15,12 @@ class Connect4Env:
         self.winner = None
         # first set of blocked cells
         self._update_blocked_cells(initial_blocked)
+        # Store previous state for undo
+        self._prev_board = None
+        self._prev_blocked = None
+        self._prev_player = None
+        self._prev_game_over = None
+        self._prev_winner = None
 
     def _update_blocked_cells(self, num_blocked: int = None):
         """Randomize 4 blocked positions; remove any discs in them."""
@@ -33,6 +39,13 @@ class Connect4Env:
     def make_move(self, col: int) -> bool:
         if self.game_over:
             return False
+
+        # Store current state before making move
+        self._prev_board = self.board.copy()
+        self._prev_blocked = self.blocked.copy()
+        self._prev_player = self.current_player
+        self._prev_game_over = self.game_over
+        self._prev_winner = self.winner
 
         # on each turn, pick 4–5 new blocked cells
         self._update_blocked_cells()
@@ -60,6 +73,21 @@ class Connect4Env:
 
         # column full or completely blocked
         return False
+
+    def undo_move(self) -> None:
+        """Undo the last move and restore the previous state."""
+        if self._prev_board is not None:
+            self.board = self._prev_board
+            self.blocked = self._prev_blocked
+            self.current_player = self._prev_player
+            self.game_over = self._prev_game_over
+            self.winner = self._prev_winner
+            # Clear previous state
+            self._prev_board = None
+            self._prev_blocked = None
+            self._prev_player = None
+            self._prev_game_over = None
+            self._prev_winner = None
 
     def _check_win(self, row: int, col: int) -> bool:
         player = self.board[row, col]
