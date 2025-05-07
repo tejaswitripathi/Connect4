@@ -87,7 +87,7 @@ def main():
 
     match = AgentMatch("Minimax", minimax_bot, "Random", random_bot)
     print("\nPlaying Minimax vs Random...")
-    match.play_matches(100)
+    match.play_matches(500)
     match.print_results()
 
 if __name__ == "__main__":
