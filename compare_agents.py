@@ -4,6 +4,7 @@ from connect4_agents import RandomAgent
 import time
 from typing import Tuple, List
 import numpy as np
+import sys
 
 class AgentMatch:
     def __init__(self, agent1_name: str, agent1: object, agent2_name: str, agent2: object):
@@ -27,7 +28,8 @@ class AgentMatch:
         move_count = 0
         
         while not env.game_over:
-#             env.display()
+#            env.display()
+            sys.stdout.flush()
             move_count += 1
             start_time = time.time()
             
@@ -46,7 +48,7 @@ class AgentMatch:
             env.make_move(move)
             current_player = 3 - current_player
         
-#         env.display()
+#        env.display()
         return env.winner, agent1_time, agent2_time, move_count
     
     def play_matches(self, num_matches: int):
