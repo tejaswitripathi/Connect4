@@ -15,16 +15,61 @@ class Connect4Env:
         self.winner = None
         # first set of blocked cells
         self._update_blocked_cells(initial_blocked)
+        # Store previous state for undo
+        self._prev_board = None
+        self._prev_blocked = None
+        self._prev_player = None
+        self._prev_game_over = None
+        self._prev_winner = None
 
     def _update_blocked_cells(self, num_blocked: int = None):
-        """Randomize 4 blocked positions; remove any discs in them."""
+        """Randomize blocked positions based on Manhattan distance to nearest colored cell."""
         # clear old blocks
         self.blocked[:, :] = False
 
         # choose how many to block
-        n = num_blocked if num_blocked is not None else random.choice([4, 5])
-        all_positions = [(r, c) for r in range(self.rows) for c in range(self.cols)]
-        for r, c in random.sample(all_positions, n):
+        n = num_blocked if num_blocked is not None else 5
+        
+        # Calculate Manhattan distances and blocking probabilities for each empty cell
+        blocking_probs = np.zeros((self.rows, self.cols))
+        has_colored_cells = False
+        
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.board[r, c] == 0 and not self.blocked[r, c]:
+                    # Find minimum Manhattan distance to any colored cell
+                    min_dist = float('inf')
+                    for r2 in range(self.rows):
+                        for c2 in range(self.cols):
+                            if self.board[r2, c2] in (1, 2):
+                                has_colored_cells = True
+                                dist = abs(r - r2) + abs(c - c2)
+                                min_dist = min(min_dist, dist)
+                    if min_dist != float('inf'):
+                        # Use sigmoid(0.1*d) instead of exp(-0.1*d)
+                        blocking_probs[r, c] = 1 / (1 + np.exp(-0.1 * min_dist))
+        
+        # If no colored cells, use uniform distribution
+        if not has_colored_cells:
+            blocking_probs = np.ones((self.rows, self.cols))
+            blocking_probs[self.board != 0] = 0  # Don't block cells with pieces
+            blocking_probs[self.blocked] = 0  # Don't block already blocked cells
+        
+        # Normalize probabilities
+        total_prob = np.sum(blocking_probs)
+        if total_prob > 0:
+            blocking_probs = blocking_probs / total_prob
+        
+        # Select cells to block based on probabilities
+        flat_indices = np.random.choice(
+            self.rows * self.cols,
+            size=n,
+            p=blocking_probs.flatten(),
+            replace=False
+        )
+        
+        for idx in flat_indices:
+            r, c = idx // self.cols, idx % self.cols
             self.blocked[r, c] = True
             # if there was a disc here, remove it
             if self.board[r, c] in (1, 2):
@@ -34,8 +79,15 @@ class Connect4Env:
         if self.game_over:
             return False
 
-        # on each turn, pick 4–5 new blocked cells
-        self._update_blocked_cells()
+        # Store current state before making move
+        self._prev_board = self.board.copy()
+        self._prev_blocked = self.blocked.copy()
+        self._prev_player = self.current_player
+        self._prev_game_over = self.game_over
+        self._prev_winner = self.winner
+
+        # # on each turn, pick 4–5 new blocked cells
+        # self._update_blocked_cells()
 
         # drop in lowest non-blocked empty cell
         for row in range(self.rows - 1, -1, -1):
@@ -53,6 +105,9 @@ class Connect4Env:
                     self.game_over = True
                     self.winner = 0
                     return True
+                
+                # on each turn, pick 4–5 new blocked cells
+                self._update_blocked_cells()
 
                 # switch
                 self.current_player = 3 - self.current_player
@@ -60,6 +115,21 @@ class Connect4Env:
 
         # column full or completely blocked
         return False
+
+    def undo_move(self) -> None:
+        """Undo the last move and restore the previous state."""
+        if self._prev_board is not None:
+            self.board = self._prev_board
+            self.blocked = self._prev_blocked
+            self.current_player = self._prev_player
+            self.game_over = self._prev_game_over
+            self.winner = self._prev_winner
+            # Clear previous state
+            self._prev_board = None
+            self._prev_blocked = None
+            self._prev_player = None
+            self._prev_game_over = None
+            self._prev_winner = None
 
     def _check_win(self, row: int, col: int) -> bool:
         player = self.board[row, col]

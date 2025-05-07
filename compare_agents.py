@@ -27,7 +27,7 @@ class AgentMatch:
         move_count = 0
         
         while not env.game_over:
-            env.display()
+#             env.display()
             move_count += 1
             start_time = time.time()
             
@@ -46,7 +46,7 @@ class AgentMatch:
             env.make_move(move)
             current_player = 3 - current_player
         
-        env.display()
+#         env.display()
         return env.winner, agent1_time, agent2_time, move_count
     
     def play_matches(self, num_matches: int):
@@ -87,7 +87,7 @@ def main():
 
     match = AgentMatch("Minimax", minimax_bot, "Random", random_bot)
     print("\nPlaying Minimax vs Random...")
-    match.play_matches(5)
+    match.play_matches(500)
     match.print_results()
 
 if __name__ == "__main__":
