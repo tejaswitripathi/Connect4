@@ -8,14 +8,11 @@ from Connect4Env import Connect4Env   # :contentReference[oaicite:0]{index=0}
 from connect4_bot import Connect4Bot  
 
 def encode_board(board, token_hidden_prob=0.3):
-    """
-    Encode a Connect 4 board into a 3-channel tensor:
+    """ Encode a Connect 4 board into a 3-channel tensor:
       - Channel 1: Player 1 tokens (visible if not hidden)
       - Channel 2: Player 2 tokens (visible if not hidden)
       - Channel 3: Hidden mask (1 if the cell is hidden, 0 otherwise)
-      (no clue if this is right)
-      
-    """
+      (no clue if this is right) """
     channels = np.zeros((3, board.shape[0], board.shape[1]), dtype=np.float32)
     for i in range(board.shape[0]):
         for j in range(board.shape[1]):
@@ -55,12 +52,9 @@ class Connect4CNN(nn.Module):
         return x  
 
 def select_action(policy, state, env, device, token_hidden_prob=0.3):
-    """
-    Given a policy network and the current environment state, select an action.
+    """Given a policy network and the current environment state, select an action.
     The state is encoded using encode_board, then the network's logits are masked
-    to zero out illegal moves. An action is then sampled from the resulting distribution.
-    
-    """
+    to zero out illegal moves. An action is then sampled from the resulting distribution."""
 
     valid_moves = env.get_valid_moves()
     if not valid_moves:
@@ -85,13 +79,7 @@ def select_action(policy, state, env, device, token_hidden_prob=0.3):
     return action.item(), m.log_prob(action)
 
 def train_rl(policy, optimizer, num_games=100, token_hidden_prob=0.3, device=torch.device("cpu")):
-    """
-    Train the policy network using a REINFORCE approach.
-    The RL agent (Player 1) plays against a random opponent (Player 2).
-    At the end of each game, a reward (+1 win, -1 loss, 0 draw) is used to update the policy.
-    (also no idea if this is how you do it)
-    
-    """
+   # Train the policy network by rewarding if there is a win and taking away points if there is a loss
     policy.train()
     for game in range(num_games):
         env = Connect4Env()
@@ -133,11 +121,7 @@ def train_rl(policy, optimizer, num_games=100, token_hidden_prob=0.3, device=tor
         print(f"Game {game+1}/{num_games}, Reward: {reward}, Loss: {game_loss.item():.4f}")
 
 def evaluate_rl(policy, num_games=20, token_hidden_prob=0.3, device=torch.device("cpu")):
-    """
-    Evaluate the RL agent by playing games against a random opponent.
-    Reports wins, losses, draws, and win rate.
-    
-    """
+    # Evaluate the nn
     policy.eval()
     wins, losses, draws = 0, 0, 0
     for game in range(num_games):
