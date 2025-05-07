@@ -5,8 +5,10 @@ from Connect4Env import Connect4Env
 class Connect4Bot:
     def __init__(self, max_depth: int = 6):
         self.max_depth = max_depth
-        self.center_weight = 2  # Reduced from 3 since center control is less important with blocking
-        self.blocking_penalty = 1.5  # Penalty for moves that could be blocked
+        self.center_weight = 2
+        
+        # Penalty for moves that could be blocked 
+        self.blocking_penalty = 1.5  
         self.pattern_weights = {
             4: 100,  # 4 in a row
             3: 5,    # 3 in a row
@@ -15,11 +17,6 @@ class Connect4Bot:
         self._move_cache = {}  # Cache for move evaluations
 
     def get_move(self, env: Connect4Env, current_player: int) -> int:
-        """
-        Get the best move for the current player using minimax with alpha-beta pruning.
-        Checks for immediate win/block opportunities before deeper search.
-        Returns the column index of the best move.
-        """
         valid_moves = env.get_valid_moves()
         if not valid_moves:
             return -1
@@ -67,32 +64,11 @@ class Connect4Bot:
         env.undo_move()
         return is_win
 
-    def _calculate_blocking_probabilities(self, env: Connect4Env) -> np.ndarray:
-        """Calculate blocking probabilities for each cell based on Manhattan distance."""
-        blocking_probs = np.zeros((env.rows, env.cols))
-        for r in range(env.rows):
-            for c in range(env.cols):
-                if env.board[r, c] == 0 and not env.blocked[r, c]:
-                    min_dist = float('inf')
-                    for r2 in range(env.rows):
-                        for c2 in range(env.cols):
-                            if env.board[r2, c2] in (1, 2):
-                                dist = abs(r - r2) + abs(c - c2)
-                                min_dist = min(min_dist, dist)
-                    if min_dist != float('inf'):
-                        blocking_probs[r, c] = 1 / (1 + np.exp(-0.1 * min_dist))
-        return blocking_probs
-
     def _get_column_blocking_risk(self, env: Connect4Env, col: int) -> float:
-        """Calculate how likely a column is to be blocked based on current pattern and blocking probabilities."""
+        """Calculate how likely a column is to be blocked based on current pattern"""
         risk = 0
-        blocking_probs = self._calculate_blocking_probabilities(env)
-        
         for row in range(env.rows):
             if env.board[row, col] == 0 and not env.blocked[row, col]:
-                # Add risk based on blocking probability
-                risk += blocking_probs[row, col] * self.blocking_penalty
-                
                 # Check if this cell is part of any potential winning patterns
                 for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
                     count = 1
@@ -108,10 +84,9 @@ class Connect4Bot:
                         risk += self.blocking_penalty
         return risk
 
-    def _minimax(self, env: Connect4Env, depth: int, is_maximizing: bool,
-                 current_player: int, alpha: float, beta: float) -> float:
+    def _minimax(self, env: Connect4Env, depth: int, is_maximizing: bool, current_player: int, alpha: float, beta: float) -> float:
         """
-        Minimax with alpha-beta pruning, adapted for dynamic blocking.
+        Minimax with alpha-beta pruning
         """
         # Check cache first
         cache_key = (tuple(map(tuple, env.board)), tuple(map(tuple, env.blocked)), depth, is_maximizing)
@@ -164,33 +139,28 @@ class Connect4Bot:
         board = env.board
         rows, cols = env.rows, env.cols
         opponent = 3 - current_player
-        blocking_probs = self._calculate_blocking_probabilities(env)
 
-        # Score center column (reduced weight due to blocking)
+        # Score center column 
         center_array = list(board[:, cols // 2])
         score += center_array.count(current_player) * self.center_weight
         score -= center_array.count(opponent) * self.center_weight
 
-        # Define helper to score a window of 4, considering blocked cells and blocking probabilities
-        def score_window(window: List[int], blocked: List[bool], window_probs: List[float]) -> float:
+        def score_window(window: List[int], blocked: List[bool]) -> float:
             s = 0
             # Count pieces and empty spaces, ignoring blocked cells
             player_count = sum(1 for i, val in enumerate(window) if val == current_player and not blocked[i])
             opp_count = sum(1 for i, val in enumerate(window) if val == opponent and not blocked[i])
             empty_count = sum(1 for i, val in enumerate(window) if val == 0 and not blocked[i])
             
-            # Calculate blocking risk for this window
-            blocking_risk = sum(window_probs)
-            
             if player_count == 4:
                 s += self.pattern_weights[4]
             elif player_count == 3 and empty_count == 1:
-                s += self.pattern_weights[3] * (1 - blocking_risk)
+                s += self.pattern_weights[3]
             elif player_count == 2 and empty_count == 2:
-                s += self.pattern_weights[2] * (1 - blocking_risk)
+                s += self.pattern_weights[2]
                 
             if opp_count == 3 and empty_count == 1:
-                s -= self.pattern_weights[3] * 0.8 * (1 - blocking_risk)
+                s -= self.pattern_weights[3] * 0.8  # Slightly reduced penalty due to blocking
             return s
 
         # Horizontal
@@ -198,31 +168,27 @@ class Connect4Bot:
             for c in range(cols - 3):
                 window = list(board[r, c:c + 4])
                 blocked = list(env.blocked[r, c:c + 4])
-                window_probs = list(blocking_probs[r, c:c + 4])
-                score += score_window(window, blocked, window_probs)
+                score += score_window(window, blocked)
 
         # Vertical
         for c in range(cols):
             for r in range(rows - 3):
                 window = list(board[r:r + 4, c])
                 blocked = list(env.blocked[r:r + 4, c])
-                window_probs = list(blocking_probs[r:r + 4, c])
-                score += score_window(window, blocked, window_probs)
+                score += score_window(window, blocked)
 
         # Positive diagonal
         for r in range(rows - 3):
             for c in range(cols - 3):
                 window = [board[r + i, c + i] for i in range(4)]
                 blocked = [env.blocked[r + i, c + i] for i in range(4)]
-                window_probs = [blocking_probs[r + i, c + i] for i in range(4)]
-                score += score_window(window, blocked, window_probs)
+                score += score_window(window, blocked)
 
         # Negative diagonal
         for r in range(3, rows):
             for c in range(cols - 3):
                 window = [board[r - i, c + i] for i in range(4)]
                 blocked = [env.blocked[r - i, c + i] for i in range(4)]
-                window_probs = [blocking_probs[r - i, c + i] for i in range(4)]
-                score += score_window(window, blocked, window_probs)
+                score += score_window(window, blocked)
 
         return score

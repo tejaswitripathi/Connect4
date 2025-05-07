@@ -89,10 +89,7 @@ def select_action(policy, state, env, device, token_hidden_prob=0.0, force_rando
 def train_rl(policy, optimizer, num_games=100, token_hidden_prob=0.3, device=torch.device("cpu"), eval_interval=1000):
     """
     Train the policy network using a REINFORCE approach.
-    The RL agent (Player 1) plays against a Minimax opponent (Player 2).
-    The Minimax opponent goes first.
     At the end of each game, a reward (+1 win, -1 loss, 0 draw) is used to update the policy.
-    Evaluates the agent every eval_interval games and tracks win rates.
     """
     policy.train()
     win_rates = []
@@ -111,7 +108,6 @@ def train_rl(policy, optimizer, num_games=100, token_hidden_prob=0.3, device=tor
                     break
                 action = minimax_opponent.get_move(env, env.current_player)
             else:  # RL agent's turn
-                # Check for legal moves
                 if not env.get_valid_moves():
                     break
                 action, log_prob = select_action(policy, state, env, device, token_hidden_prob)
@@ -150,11 +146,7 @@ def train_rl(policy, optimizer, num_games=100, token_hidden_prob=0.3, device=tor
     return win_rates, eval_games
 
 def evaluate_rl(policy, num_games=20, token_hidden_prob=0.3, device=torch.device("cpu"), return_stats=False, force_random=False):
-    """
-    Evaluate the RL agent by playing games against a Minimax opponent.
-    The Minimax opponent goes first.
-    If force_random is True, the agent will make random moves instead of using the policy.
-    """
+    # Evaluate the agent
     policy.eval()
     wins, losses, draws = 0, 0, 0
     minimax_opponent = Connect4Bot(max_depth=4)  # Using same depth as training
